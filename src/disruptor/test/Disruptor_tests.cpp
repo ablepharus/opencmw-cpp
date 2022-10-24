@@ -147,7 +147,7 @@ TEST_CASE("Disruptor stress test", "[Disruptor]") {
 
     const auto time_start = std::chrono::system_clock::now();
     {
-        std::vector<std::jthread> threads;
+        std::vector<opencmw::thread_t> threads;
         threads.reserve(publishers.size());
         for (auto &&publisher : publishers) {
             threads.emplace_back([publisher] { publisher->run(); });

@@ -26,6 +26,12 @@
 
 namespace opencmw {
 
+#if defined(__clang__)
+    using thread_t = std::thread;
+#else
+using thread_t std::jthread;
+#endif
+
 class TaskQueue;
 
 namespace thread_pool::detail {
@@ -232,7 +238,7 @@ class BasicThreadPool {
 
     std::mutex                   _threadListMutex{};
     std::atomic<std::size_t>     _numThreads{ 0U };
-    std::list<std::jthread>      _threads;
+    std::list<thread_t>      _threads;
 
     std::vector<bool>            _affinityMask{};
     thread::Policy               _schedulingPolicy   = thread::Policy::OTHER;
@@ -311,7 +317,7 @@ public:
         updateThreadConstraints();
     }
 
-    template<const basic_fixed_string taskName = "", uint32_t priority = 0, int32_t cpuID = -1, std::invocable Callable, typename... Args, typename R = std::result_of_t<Callable(Args...)>>
+    template<const basic_fixed_string taskName = "", uint32_t priority = 0, int32_t cpuID = -1, std::invocable Callable, typename... Args, typename R = std::invoke_result_t<Callable(Args...)>>
     requires(std::is_same_v<R, void>) void execute(Callable &&func, Args &&...args) {
         static thread_local SpinWait spinWait;
         if constexpr (cpuID >= 0) {
@@ -373,7 +379,7 @@ private:
         std::ranges::for_each(_threads, [&](auto &thread) { updateThreadConstraints(threadID++, thread); });
     }
 
-    void updateThreadConstraints(const std::size_t threadID, std::jthread &thread) const {
+    void updateThreadConstraints(const std::size_t threadID, thread_t &thread) const {
         thread::setThreadName(fmt::format("{}#{}", _poolName, threadID), thread);
         thread::setThreadSchedulingParameter(_schedulingPolicy, _schedulingPriority, thread);
         if (!_affinityMask.empty()) {
@@ -406,7 +412,7 @@ private:
     void createWorkerThread() {
         std::scoped_lock  lock(_threadListMutex);
         const std::size_t nThreads = numThreads();
-        std::jthread     &thread   = _threads.emplace_back(&BasicThreadPool::worker, this);
+        thread_t          &thread   = _threads.emplace_back(&BasicThreadPool::worker, this);
         updateThreadConstraints(nThreads + 1, thread);
     }
 

@@ -91,7 +91,7 @@ class RestBackend : public Mode {
 protected:
     Broker<Roles...> &_broker;
     const VirtualFS  &_vfs;
-    std::jthread      _thread;
+    std::thread      _thread;
     URI<>             _restAddress;
 
     using Mode::_svr;
@@ -170,7 +170,7 @@ public:
     explicit RestBackend(Broker<Roles...> &broker, const VirtualFS &vfs, URI<> restAddress = URI<>::factory().scheme(DEFAULT_REST_SCHEME).hostName("0.0.0.0").port(DEFAULT_REST_PORT).build())
         : _broker(broker), _vfs(vfs), _restAddress(restAddress) {
         _broker.registerDnsAddress(restAddress);
-        _thread = std::jthread(&RestBackend::run, this);
+        _thread = opencmw::thread_t(&RestBackend::run, this);
     }
 
     virtual ~RestBackend() {

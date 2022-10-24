@@ -7,6 +7,11 @@
 
 #include <ThreadAffinity.hpp>
 
+#include <thread>
+namespace opencmw {
+    using thread_t = std::thread;
+}
+
 int main() {
     using namespace opencmw;
     using namespace opencmw::disruptor;
@@ -60,7 +65,7 @@ int main() {
         std::chrono::time_point time_start    = std::chrono::system_clock::now();
         auto                    on_completion = [&time_start]() noexcept { time_start = std::chrono::system_clock::now(); };
         std::barrier            sync_point(2, on_completion);
-        std::jthread            publisher([&sync_point, &publisher, &ringBuffer, &fillEventHandler]() {
+        opencmw::thread_t       publisher([&sync_point, &publisher, &ringBuffer, &fillEventHandler]() {
             opencmw::thread::setThreadName("publisher", publisher);
             opencmw::thread::setThreadAffinity(std::array{ true, false }, publisher);
             sync_point.arrive_and_wait();
@@ -78,7 +83,7 @@ int main() {
 
         int                     received = 0;
         using opencmw::disruptor::PollState;
-        std::jthread consumer([&sync_point, &consumer, &received, &poller]() {
+        opencmw::thread_t consumer([&sync_point, &consumer, &received, &poller]() {
             opencmw::thread::setThreadName("consumer", consumer);
             opencmw::thread::setThreadAffinity(std::array{ false, true }, consumer);
             const auto receiver = [&received](const int &event, std::int64_t /*sequenceID*/, bool /*endOfBatch*/) {
@@ -110,7 +115,7 @@ int main() {
         std::chrono::time_point time_start    = std::chrono::system_clock::now();
         auto                    on_completion = [&time_start]() noexcept { time_start = std::chrono::system_clock::now(); };
         std::barrier            sync_point(2, on_completion);
-        std::jthread            publisher([&sync_point, &queue, &counter, &publisher]() {
+        opencmw::thread_t       publisher([&sync_point, &queue, &counter, &publisher]() {
             opencmw::thread::setThreadName("publisher", publisher);
             opencmw::thread::setThreadAffinity(std::array{ true, false }, publisher);
             sync_point.arrive_and_wait();
@@ -119,7 +124,7 @@ int main() {
                 queue.push(counter);
             } });
 
-        std::jthread            consumer([&sync_point, &consumer, &received, &queue]() {
+        opencmw::thread_t       consumer([&sync_point, &consumer, &received, &queue]() {
             opencmw::thread::setThreadName("consumer", consumer);
             opencmw::thread::setThreadAffinity(std::array{ false, true }, consumer);
             sync_point.arrive_and_wait();

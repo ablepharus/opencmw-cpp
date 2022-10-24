@@ -9,6 +9,11 @@
 #include <disruptor/RingBuffer.hpp>
 #include <ThreadAffinity.hpp>
 
+
+namespace opencmw {
+    using thread_t = std::thread;
+}
+
 static constexpr std::uint32_t maxCores   = 24U;
 static const std::size_t       maxThreads = std::min(std::thread::hardware_concurrency(), maxCores);
 
@@ -34,7 +39,7 @@ double                         testBlockingQueue(const std::uint64_t nLoop, cons
     std::barrier                              startMark(static_cast<long>(nProducer + nConsumer), on_completion1);
     std::barrier                              stopMark(static_cast<long>(nProducer + nConsumer), on_completion2);
     // init producers
-    std::vector<std::jthread> producers;
+    std::vector<opencmw::thread_t> producers;
     for (auto i = 0U; i < nProducer; i++) {
         producers.emplace_back([&i, &nEventsProducer, &nProduced, &blockingQueue, &startMark, &stopMark]() {
             opencmw::thread::setThreadName(fmt::format("publisher{}", i));
@@ -52,7 +57,7 @@ double                         testBlockingQueue(const std::uint64_t nLoop, cons
     }
 
     // init consumers
-    std::vector<std::jthread> consumers;
+    std::vector<opencmw::thread_t> consumers;
     for (auto i = 0U; i < nConsumer; i++) {
         auto &queue = blockingQueue[i];
         consumers.emplace_back([&i, &nEventsConsumer, &nConsumed, &queue, &startMark, &stopMark]() {
@@ -113,7 +118,7 @@ double testDisruptor(const std::uint64_t nLoop, const std::uint64_t nProducer, c
     std::barrier                              startMark(static_cast<long>(nProducer + nConsumer), on_completion1);
     std::barrier                              stopMark(static_cast<long>(nProducer + nConsumer), on_completion2);
     // init producers
-    std::vector<std::jthread> producers;
+    std::vector<opencmw::thread_t> producers;
     for (auto i = 0U; i < nProducer; i++) {
         producers.emplace_back([&i, &nEventsProducer, &nProduced, &ringBuffer, &startMark, &stopMark]() {
             opencmw::thread::setThreadName(fmt::format("publisher{}", i));
@@ -134,7 +139,7 @@ double testDisruptor(const std::uint64_t nLoop, const std::uint64_t nProducer, c
     }
 
     // init consumers
-    std::vector<std::jthread> consumers;
+    std::vector<opencmw::thread_t> consumers;
     for (auto i = 0U; i < nConsumer; i++) {
         consumers.emplace_back([&i, &nEventsConsumer, &nConsumed, &ringBuffer, &startMark, &stopMark]() {
             const auto &poller = ringBuffer->newPoller();

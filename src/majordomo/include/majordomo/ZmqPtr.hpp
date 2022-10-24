@@ -11,10 +11,13 @@
 #include <zmq.h>
 
 #ifdef __clang__ // TODO: replace (source_location is part of C++20 but still "experimental" for clang
-#include <experimental/source_location>
+
 namespace std {
-typedef std::experimental::source_location source_location;
+    class source_location {
+        source_location current() { return {}; }
+    };
 }
+
 #else
 #include <source_location>
 #endif
@@ -68,6 +71,7 @@ public:
 #endif
         assert(isValid());
     };
+
     template<typename ExceptionType, typename... Args>
     void onFailure(Args &&...args) {
         if (!isValid()) [[unlikely]] {

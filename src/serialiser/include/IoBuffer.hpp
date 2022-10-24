@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) || __clang_major__ < 15
 #include <experimental/memory_resource>
 namespace std {
 namespace pmr {

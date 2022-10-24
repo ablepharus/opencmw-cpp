@@ -19,7 +19,7 @@ namespace opencmw::disruptor {
 class RoundRobinThreadAffinedTaskScheduler : public ITaskScheduler {
     BlockingQueue<std::packaged_task<void()>> _tasks;
     std::atomic<bool>                         _started{ false };
-    std::vector<std::jthread>                 _threads;
+    std::vector<opencmw::thread_t>            _threads;
 
 public:
     void start(std::size_t numberOfThreads) override {

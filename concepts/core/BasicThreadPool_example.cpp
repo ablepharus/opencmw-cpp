@@ -73,7 +73,7 @@ int main() {
         // execute nTasks tasks, each on a new jthreads (N.B. worst case timing <-> base-line benchmark)
         const auto              start = steady_clock::now();
         std::atomic<int>        counter(0);
-        std::list<std::jthread> threads;
+        std::list<opencmw::thread_t> threads;
         for (int i = 0; i < nTasks; i++) {
             threads.emplace_back([&counter] { std::this_thread::sleep_for(milliseconds(10)); ++counter; counter.notify_one(); });
         }

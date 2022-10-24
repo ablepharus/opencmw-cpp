@@ -127,11 +127,11 @@ int main(int argc, char **argv) {
 
         BasicWorker<propertyStoreService> worker(broker, TestHandler{});
 
-        auto                              brokerThread = std::jthread([&broker] {
+        auto                              brokerThread = std::thread([&broker] {
             broker.run();
                                      });
 
-        auto                              workerThread = std::jthread([&worker] {
+        auto                              workerThread = std::thread([&worker] {
             worker.run();
                                      });
 

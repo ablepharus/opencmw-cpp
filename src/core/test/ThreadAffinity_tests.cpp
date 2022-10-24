@@ -3,6 +3,12 @@
 #include <fmt/format.h>
 #include <ThreadAffinity.hpp>
 
+#if defined(__clang__)
+using thread_type = std::thread;
+#else
+using thread_type = std::jthread;
+#endif
+
 #define REQUIRE_MESSAGE(cond, msg) \
     do { \
         INFO(msg); \
@@ -35,7 +41,7 @@ TEST_CASE("basic thread affinity", "[ThreadAffinity]") {
     using namespace opencmw;
     std::atomic<bool>    run         = true;
     const auto           dummyAction = [&run]() { while (run) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); } };
-    std::jthread         testThread(dummyAction);
+    thread_type          testThread(dummyAction);
 
     constexpr std::array threadMap = { true, false, false, false };
     thread::setThreadAffinity(threadMap, testThread);
@@ -59,7 +65,7 @@ TEST_CASE("basic thread affinity", "[ThreadAffinity]") {
     }
     REQUIRE_MESSAGE(equal, fmt::format("set {{{}}} affinity map does not match get {{{}}} map", fmt::join(threadMap, ", "), fmt::join(affinity, ", ")));
 
-    std::jthread bogusThread;
+    thread_type bogusThread;
     REQUIRE_THROWS_AS(thread::getThreadAffinity(bogusThread), std::system_error);
     REQUIRE_THROWS_AS(thread::setThreadAffinity(threadMapOn, bogusThread), std::system_error);
 
@@ -98,13 +104,13 @@ TEST_CASE("ThreadName", "[ThreadAffinity]") {
 
     std::atomic<bool> run         = true;
     const auto        dummyAction = [&run]() { while (run) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); } };
-    std::jthread      testThread(dummyAction);
+    thread_type       testThread(dummyAction);
     REQUIRE("" != thread::getThreadName(testThread));
     REQUIRE_NOTHROW(thread::setThreadName("testThreadName", testThread));
     thread::setThreadName("testThreadName", testThread);
     REQUIRE("testThreadName" == thread::getThreadName(testThread));
 
-    std::jthread uninitialisedTestThread;
+    thread_type uninitialisedTestThread;
     REQUIRE_THROWS_AS(thread::getThreadName(uninitialisedTestThread), std::system_error);
     REQUIRE_THROWS_AS(thread::setThreadName("name", uninitialisedTestThread), std::system_error);
     run = false;
@@ -153,8 +159,8 @@ TEST_CASE("ThreadSchedulingParameter", "[ThreadAffinity]") {
 
     std::atomic<bool>     run         = true;
     const auto            dummyAction = [&run]() { while (run) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); } };
-    std::jthread          testThread(dummyAction);
-    std::jthread          bogusThread;
+    thread_type           testThread(dummyAction);
+    thread_type           bogusThread;
 
     using namespace opencmw::thread;
     struct SchedulingParameter param = getThreadSchedulingParameter(testThread);

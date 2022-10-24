@@ -74,7 +74,7 @@ public:
 
     template<typename... F>
     requires(sizeof...(F) > 0) void visit(F &&...visitors) {
-        overloaded visitor{ std::forward<F>(visitors)... };
+        overloaded<F...> visitor{ std::forward<F>(visitors)... };
         (..., std::ranges::for_each(std::get<std::vector<Ts>>(_items), visitor));
     }
 

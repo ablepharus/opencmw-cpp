@@ -21,6 +21,10 @@
 #endif
 #endif
 
+namespace opencmw {
+    using thread_t = std::thread;
+}
+
 namespace opencmw::thread {
 
 constexpr size_t THREAD_MAX_NAME_LENGTH  = 16;
@@ -56,9 +60,13 @@ public:
     };
 };
 
-template<class type>
-concept thread_type = std::is_same_v<type, std::thread> || std::is_same_v<type, std::jthread>;
-
+#if defined(__clang__)
+    template<class type>
+    concept thread_type = std::is_same_v<type, std::thread>;
+#else
+    template<class type>
+    concept thread_type = std::is_same_v<type, std::thread> || std::is_same_v<type, std::jthread>;
+#endif
 namespace detail {
 #ifdef _POSIX_VERSION
     template<typename Tp, typename... Us>
