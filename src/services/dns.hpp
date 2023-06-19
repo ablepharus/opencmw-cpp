@@ -42,15 +42,16 @@ private:
 
 };
 
-struct DataStorage{
+class RefreshRequest;
+class DataStorage{
+public:
     static DataStorage& getInstance() {
         static DataStorage instance;
         return instance;
     }
 
-
-
     StorageEntry addEntry(const Entry& entry) {
+        std::lock_guard<std::mutex> lock(_mutex);
         StorageEntry newEntry{entry};
         _entries.push_back(newEntry);
         return newEntry;
@@ -60,16 +61,53 @@ struct DataStorage{
         return _entries;
     }
 
+    static std::string getFilename()  {
+        return {filePath};
+    }
+    void refreshEntry(const opencmw::service::dns::RefreshRequest &request);
 
 protected:
-    DataStorage() = default;
-    ~DataStorage() = default;
+    DataStorage() {
+        loadDataFromFile(filePath);
+        startExpirationThread();
+    };
+    virtual ~DataStorage() {
+        _check = false;
+        saveDataToFile(filePath);
 
+        _expirationThread.join();
+    }
+
+    bool loadDataFromFile(const char* filePath);
+    bool saveDataToFile(const char* filePath);
     // Disallow copy construction and assignment
     DataStorage(const DataStorage&) = delete;
     DataStorage& operator=(const DataStorage&) = delete;
 
+    void checkExpiredEntries() {
+        while (_check) {
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                auto                        now = std::chrono::system_clock::now();
+                auto                        it  = std::remove_if(_entries.begin(), _entries.end(), [now](const auto &entry) {
+                    auto b = entry.ttl < now;
+                    return b;
+                });
+                _entries.erase(it, _entries.end());
+            }
+        }
+    }
+    std::thread _expirationThread;
+    bool _check;
+    void startExpirationThread() {
+        _check = true;
+        _expirationThread = std::thread(&DataStorage::checkExpiredEntries, this);
+    }
+
+    std::mutex _mutex;
     std::vector<StorageEntry> _entries;
+    static constexpr char* filePath = "./dns_data_storage.yas";
 };
 
 struct Context {
@@ -82,6 +120,10 @@ struct RegisterRequest {
 };
 
 struct RegisterResponse : Entry {
+    int id;
+};
+
+struct RefreshRequest {
     int id;
 };
 
@@ -189,6 +231,7 @@ ENABLE_REFLECTION_FOR(opencmw::service::dns::Context, contextType);
 ENABLE_REFLECTION_FOR(opencmw::service::dns::RegisterRequest, entry);
 ENABLE_REFLECTION_FOR(opencmw::service::dns::RegisterResponse, protocol, hostname, port, service_name, service_type,
         signal_name, signal_unit, signal_rate, signal_type, id);
+ENABLE_REFLECTION_FOR(opencmw::service::dns::RefreshRequest, id);
 ENABLE_REFLECTION_FOR(opencmw::service::dns::Entry, protocol, hostname, port, service_name, service_type,
         signal_name, signal_unit, signal_rate, signal_type);
 ENABLE_REFLECTION_FOR(opencmw::service::dns::QueryResponse, protocol, hostname, port, service_name, service_type,
@@ -200,6 +243,54 @@ ENABLE_REFLECTION_FOR(opencmw::service::dns::QueryRequest, protocol, hostname, p
 namespace opencmw {
 namespace service {
 namespace dns {
+
+
+bool DataStorage::loadDataFromFile(const char *filePath) {
+    if (!std::filesystem::exists(filePath)) return false;
+
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) return false;
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    file.close();
+
+    std::string s{buffer.str()};
+    if (s.size() < 9 ) return false;
+    IoBuffer ioBuffer{s.data(), s.size()};
+    QueryResponse resp;
+    opencmw::deserialise<opencmw::YaS, opencmw::ProtocolCheck::ALWAYS>(ioBuffer, resp);
+    auto newEntries = resp.toEntries();
+
+    std::lock_guard<std::mutex> lock(_mutex);
+    std::for_each(newEntries.begin(), newEntries.end(), [&](const auto& entry) {
+        _entries.push_back({entry});
+    });
+    return true;
+}
+
+bool DataStorage::saveDataToFile(const char *filePath) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    std::vector<Entry> entries;
+    std::for_each(_entries.begin(), _entries.end(), [&entries](auto& e) { entries.push_back({e});});
+    QueryResponse k{entries};
+    IoBuffer outBuffer;
+    opencmw::serialise<opencmw::YaS>(outBuffer, k);
+
+    std::ofstream os{filePath, std::ios::binary};
+    if (!os.is_open()) return false;
+
+    os.write((const char*)outBuffer.data(), outBuffer.size());
+    return true;
+}
+
+void DataStorage::refreshEntry(const opencmw::service::dns::RefreshRequest &request) {
+    std::lock_guard<std::mutex> m{_mutex};
+    auto a = std::find_if(_entries.begin(), _entries.end(), [&request](auto& e) { return e.id == request.id; });
+    if (a != _entries.end()) {
+        a->ttl = std::chrono::system_clock::now() + std::chrono::hours{1};
+    }
+}
 
 std::vector<Entry> queryServices(const QueryRequest& query = {}) {
     // serialize query parameters
@@ -282,6 +373,39 @@ RegisterResponse registerService(const Entry& entry) {
     return res;
 }
 
+
+using refreshServiceWorker = majordomo::Worker<"RefreshDNS", Context, RefreshRequest, RegisterResponse,
+        majordomo::description<"Refresh Signal">>;
+class RefreshServiceHandler {
+public:
+    void operator()(majordomo::RequestContext &rawCtx, const Context &ctx, const RefreshRequest &in, Context &replyContext, RegisterResponse &response) {
+        DataStorage::getInstance().refreshEntry(in);
+    }
+};
+RegisterResponse refreshService(const RefreshRequest& refresh) {
+    IoBuffer outBuffer;
+    opencmw::serialise<opencmw::YaS>(outBuffer, refresh);
+    std::string contentType{MIME::BINARY.typeName()};
+    std::string body{outBuffer.asString()};
+
+    // send request to register Service
+    httplib::Client client{"http://localhost:8080", };
+    auto response = client.Post("RefreshDNS", body, contentType);
+
+    if(response.error() != httplib::Error::Success || response->status == 500) throw std::runtime_error{response->reason};
+
+    // deserialise response
+    IoBuffer inBuffer;
+    inBuffer.put<opencmw::IoBuffer::MetaInfo::WITHOUT>(response->body);
+    RegisterResponse res;
+    try {
+        opencmw::deserialise<opencmw::YaS, opencmw::ProtocolCheck::ALWAYS>(inBuffer, res);
+    } catch (const ProtocolException &exc) {
+        throw std::runtime_error{exc.what()}; // rethrowing, because ProtocolException behaves weird
+    }
+
+    return res;
+}
 
 } // namespace dns
 } // namespace service
