@@ -44,6 +44,14 @@ public:
     static void callbacky(const std::vector<Entry> &response_entries) {
         DEBUG_LOG("callbacky")
     }
+    void querySignalsSync() {
+        std::promise<std::vector<Entry>> p;
+        querySignalsFuture(p);
+        auto f = p.get_future();
+        while (f.wait_for(std::chrono::microseconds{50}) == std::future_status::timeout) {
+
+        }
+    }
     void querySignalsAsync(std::function<void(std::vector<Entry>)> callback, const Entry &filter = {}) {
         auto uri = URI<>::factory(_endpoint);
         auto uri2      = std::move(uri).setQuery(query::serialise(filter)).build();
