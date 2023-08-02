@@ -147,6 +147,7 @@ void wait_for_results() {
 int main() {
 //threadResultClientContext.get();
         while (threadResultClientContext.wait_until(std::chrono::system_clock::now()) != std::future_status::ready) {
+         emscripten_thread_sleep(500);
         }
     std::cout << "result:" << threadResultClientContext.get().size() << std::endl;
 
