@@ -45,3 +45,10 @@ target_link_libraries(rest_client_only_tests PUBLIC opencmw_project_warnings ope
 target_include_directories(rest_client_only_tests PRIVATE ${CMAKE_SOURCE_DIR})
 # This test requires a different kind of invocation as it needs the server running
 # catch_discover_tests(rest_client_only_tests)
+
+if (EMSCRIPTEN)
+    add_executable(emscripten_client_tests EmscriptenClientTests.cpp)
+    target_link_libraries(emscripten_client_tests PUBLIC opencmw_project_warnings opencmw_project_options client)
+    target_include_directories(emscripten_client_tests PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_options(emscripten_client_tests PRIVATE --pre-js=/home/alex/dev/opencmw-cpp/pre.js --tracing -sPROXY_TO_PTHREAD -sEXIT_RUNTIME)
+endif()

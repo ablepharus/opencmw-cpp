@@ -14,6 +14,10 @@
 
 #include "ClientCommon.hpp"
 
+#ifdef EMSCRIPTEN
+#include <emscripten/threading.h>
+#endif
+
 namespace opencmw::client {
 
 static constexpr std::size_t CMD_RB_SIZE = 32;
@@ -87,8 +91,16 @@ private:
                 }
                 auto &c = getClientCtx(cmd.endpoint);
                 c.request(cmd);
+#ifdef EMSCRIPTEN
+                emscripten_current_thread_process_queued_calls();
+//                DEBUG_LOG("INNER")
+#endif
                 return false;
             });
+#ifdef EMSCRIPTEN
+//            DEBUG_LOG("outer")
+            emscripten_current_thread_process_queued_calls();
+#endif
         }
     }
 

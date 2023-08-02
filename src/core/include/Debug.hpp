@@ -63,6 +63,76 @@ log() {
         REQUIRE_THROWS_AS(cond, exception); \
     } while ((void) 0, 0)
 
+#define DEBUG_VARIABLES( \
+                         \
+        )
+
+class DebugBeforeAfter {
+public:
+    DebugBeforeAfter(const char* file, int line, const char* function)
+        : file_(file), line_(line), function_(function) {
+        start_ = std::chrono::high_resolution_clock::now();
+        std::cout << "Before: File: " << file_ << ", Line: " << line_ << ", Function: " << function_ << std::endl;
+    }
+
+    ~DebugBeforeAfter() {
+        auto end = std::chrono::high_resolution_clock::now();
+        std::cout << "After:  File: " << file_ << ", Line: " << line_ << ", Function: " << function_
+                  << ", Duration: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count() << " ms" << std::endl;
+    }
+
+private:
+    const char* file_;
+    int line_;
+    const char* function_;
+    std::chrono::high_resolution_clock::time_point start_;
+};
+
+#ifdef NDEBUG
+#define DEBUG_BEFORE_AFTER
+#define DEBUG_VARIABLES(...)
+#else
+
+#ifdef EMSCRIPTEN
+#define _DEBUG_EMSCRIPTEN_THREADS_ "(emscripten mainthread/mainruntimethread) (" <<  emscripten_is_main_runtime_thread() << "/" << emscripten_is_main_browser_thread() << ")"
+#ifndef NDEBUGEMSCRIPTEN
+
+#else
+#define
+#endif // NDEBUGEMSCRIPTEN
+#define _DEBUG_PREFIXES_1 _DEBUG_EMSCRIPTEN_THREADS_
+#endif // EMSCRIPTEN
+#define _DEBUG_PREFIXES   __FILE__<<":"<<__LINE__ << " @ " << __PRETTY_FUNCTION__ << ": "
+
+#define DEBUG_VARIABLES(...) do { \
+    std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << _DEBUG_PREFIXES_1 << #__VA_ARGS__ << ": "; \
+    logVars(__VA_ARGS__); \
+    std::cout << std::endl; \
+} while(0)
+#define DEBUG_LOG(msg) std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << msg << std::endl;
+template<typename T>
+void logVars(const T& val) {
+    std::cout << val;
+}
+
+template<typename T, typename... Args>
+void logVars(const T& val, const Args&... args) {
+    std::cout << val << "\t";
+    logVars(args...);
+}
+
+#define DEBUG_FINISH(expr) \
+DEBUG_LOG("A")               \
+expr;                       \
+DEBUG_LOG("B");
+
+
+
+#endif // NDEBUG
+
+
+
+
 // #define OPENCMW_INSTRUMENT_ALLOC 1 //NOLINT -- used as a global macro to enable alloc/free profiling
 namespace opencmw::debug {
 static std::size_t           alloc{ 0 };   // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)

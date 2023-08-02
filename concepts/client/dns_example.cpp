@@ -8,7 +8,9 @@
 #include <majordomo/base64pp.hpp>
 #include <majordomo/Broker.hpp>
 #include <majordomo/Worker.hpp>
-#endif
+#else
+#include <emscripten/trace.h>
+#endif // EMSCRIPTEN
 
 #include <string_view>
 #include <thread>
@@ -59,15 +61,32 @@ void register_device(auto &client, std::string_view signal) {
 
 void query_devices(auto &client, std::string_view query) {
     Entry query_filter{ .signal_name = std::string{ query } };
-    client.querySignalsAsync([](const auto &entries) {
+
+    std::promise<std::vector<Entry>> promise;
+    client.querySignalsFuture(promise);
+    auto f = promise.get_future();
+    while (f.wait_for(std::chrono::seconds{1}) != std::future_status::ready) {
+        std::cout << "ooops YEAH" << std::endl;
+#ifdef EMSCRIPTEN
+        emscripten_current_thread_process_queued_calls();
+        emscripten_sleep(10);
+#endif
+    }
+    std::cout << f.get().size() << std::endl;
+    //auto s = client.querySignals();
+
+    /*client.querySignalsAsync([](const auto &entries) {
         fmt::print("got {} results:\n", entries.size());
         for (auto &entry : entries) {
             fmt::print("- {}\n", entry);
         }
-    }, query_filter);
+    }, query_filter);*/
 }
 
 int main(int argc, char *argv[]) {
+#ifdef EMSCRIPTEN
+    emscripten_trace_configure_for_google_wtf();
+#endif // EMSCRIPTEN
     using opencmw::URI;
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     std::string_view                    command = args[0];
@@ -106,4 +125,5 @@ int main(int argc, char *argv[]) {
     } else {
         fmt::print("not enough arguments: {}\n", args);
     }
+    emscripten_cancel_main_loop();
 }

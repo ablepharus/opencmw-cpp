@@ -12,6 +12,7 @@
 #include <ClientContext.hpp>
 #include <MIME.hpp>
 #include <URI.hpp>
+#include <emscripten/threading.h>
 
 using namespace opencmw;
 
@@ -82,9 +83,9 @@ struct FetchPayload {
                              .error           = errorMsg,
                              .rbac            = IoBuffer() });
         } catch (const std::exception &e) {
-            std::cerr << fmt::format("caught exception '{}' in RestClient::returnMdpMessage(cmd={}, {}: {})", e.what(), command.endpoint, status, body) << std::endl;
+            std::cerr << fmt::format("caught exception '{}' in FetchPayload::returnMdpMessage(cmd={}, {}: {})", e.what(), command.endpoint, status, body) << std::endl;
         } catch (...) {
-            std::cerr << fmt::format("caught unknown exception in RestClient::returnMdpMessage(cmd={}, {}: {})", command.endpoint, status, body) << std::endl;
+            std::cerr << fmt::format("caught unknown exception in FetchPayload::returnMdpMessage(cmd={}, {}: {})", command.endpoint, status, body) << std::endl;
         }
     }
 
@@ -259,16 +260,45 @@ private:
         attr.attributes     = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
         attr.requestHeaders = preferredHeaderEmscripten.data();
         attr.onsuccess      = [](emscripten_fetch_t *fetch) {
+            DEBUG_LOG("onsuccess")
             getPayload(fetch)->onsuccess(fetch->status, std::string_view(fetch->data, detail::checkedStringViewSize(fetch->numBytes)));
             emscripten_fetch_close(fetch);
         };
         attr.onerror = [](emscripten_fetch_t *fetch) {
+            DEBUG_LOG("onfailure")
+            DEBUG_VARIABLES(fetch->numBytes, fetch->statusText, fetch->status);
             getPayload(fetch)->onerror(fetch->status, std::string_view(fetch->data, detail::checkedStringViewSize(fetch->numBytes)), fetch->statusText);
             emscripten_fetch_close(fetch);
         };
 
         // TODO: Pass the payload as POST body: emscripten_fetch(&attr, uri.relativeRef()->data());
-        emscripten_fetch(&attr, URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data());
+        //void emscripten_async_run_in_main_runtime_thread_(EM_FUNC_SIGNATURE sig, void *func_ptr __attribute__((nonnull)), ...);
+        // Returns 1 if the current thread is the thread that hosts the Emscripten
+        // runtime.
+        std::cout << emscripten_is_main_runtime_thread() <<  emscripten_is_main_browser_thread() <<  std::endl;
+        // Returns 1 if the current thread is the main browser thread.  In the case that
+        // the emscripten module is run in a worker there may be no pthread for which
+        // this returns 1.
+
+        DEBUG_VARIABLES(emscripten_is_main_browser_thread(), emscripten_is_main_runtime_thread());
+        if (emscripten_is_main_runtime_thread()) {
+            emscripten_fetch(&attr, URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data());
+        } else {
+            //emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_RETURN_VALUE_V, foo);
+            std::cout << "Bar" << std::endl;
+            auto d = URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data();
+            emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VII, fetch, attr, d);
+            std::cout << "proxied to main thread" << std::endl;
+        }
+        //
+        std::cout << "sent fetch" << std::endl;
+    }
+    static void fetch(emscripten_fetch_attr_t &attr, const char* url) {
+        emscripten_fetch(&attr, url);
+    }
+    static void foo() {
+        //int c = emscripten_is_main_runtime_thread();
+        //int k = c + 2;
     }
 
     void startSubscription(Command &&cmd) {
