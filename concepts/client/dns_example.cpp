@@ -69,7 +69,7 @@ void query_devices(auto &client, std::string_view query) {
         std::cout << "ooops YEAH" << std::endl;
 #ifdef EMSCRIPTEN
         emscripten_current_thread_process_queued_calls();
-        emscripten_thread_sleep(500)
+        emscripten_thread_sleep(500);
         emscripten_sleep(500);
 #endif
     }
