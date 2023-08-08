@@ -79,7 +79,9 @@ public:
             ctx->stop();
         }
         _stop_requested = true;
+        DEBUG_LOG("joining thread");
         _poller.join(); // wait for all workers to be finished
+        DEBUG_LOG("thread joined");
     }
 
 private:
@@ -92,14 +94,14 @@ private:
                 auto &c = getClientCtx(cmd.endpoint);
                 c.request(cmd);
 #ifdef EMSCRIPTEN
-                emscripten_current_thread_process_queued_calls();
+                //emscripten_current_thread_process_queued_calls();
 //                DEBUG_LOG("INNER")
 #endif
                 return false;
             });
 #ifdef EMSCRIPTEN
-//            DEBUG_LOG("outer")
-            emscripten_current_thread_process_queued_calls();
+//            DEBUG_LOG("outers")
+            //emscripten_current_thread_process_queued_calls();
 #endif
         }
     }

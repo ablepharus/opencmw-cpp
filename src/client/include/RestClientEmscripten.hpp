@@ -272,26 +272,16 @@ private:
         };
 
         // TODO: Pass the payload as POST body: emscripten_fetch(&attr, uri.relativeRef()->data());
-        //void emscripten_async_run_in_main_runtime_thread_(EM_FUNC_SIGNATURE sig, void *func_ptr __attribute__((nonnull)), ...);
-        // Returns 1 if the current thread is the thread that hosts the Emscripten
-        // runtime.
-        std::cout << emscripten_is_main_runtime_thread() <<  emscripten_is_main_browser_thread() <<  std::endl;
-        // Returns 1 if the current thread is the main browser thread.  In the case that
-        // the emscripten module is run in a worker there may be no pthread for which
-        // this returns 1.
 
         DEBUG_VARIABLES(emscripten_is_main_browser_thread(), emscripten_is_main_runtime_thread());
-        if (emscripten_is_main_runtime_thread()) {
-            emscripten_fetch(&attr, URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data());
+        auto d = URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data();
+        if ( emscripten_is_main_runtime_thread()) {
+            emscripten_fetch(&attr, d);
         } else {
-            //emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_RETURN_VALUE_V, foo);
-            std::cout << "Bar" << std::endl;
-            auto d = URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data();
             emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VII, fetch, attr, d);
             std::cout << "proxied to main thread" << std::endl;
         }
-        //
-        std::cout << "sent fetch" << std::endl;
+        DEBUG_LOG("sent fetch")
     }
     static void fetch(emscripten_fetch_attr_t &attr, const char* url) {
         emscripten_fetch(&attr, url);

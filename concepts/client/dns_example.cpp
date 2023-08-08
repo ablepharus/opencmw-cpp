@@ -63,17 +63,23 @@ void query_devices(auto &client, std::string_view query) {
     Entry query_filter{ .signal_name = std::string{ query } };
 
     std::promise<std::vector<Entry>> promise;
+    /*client.querySignalsAsync([](std::vector<Entry> entries) {
+        std::cout << "result size:" << entries.size() << std::endl;
+          });*/
     client.querySignalsFuture(promise);
     auto f = promise.get_future();
     while (f.wait_for(std::chrono::seconds{1}) != std::future_status::ready) {
-        std::cout << "ooops YEAH" << std::endl;
+        DEBUG_LOG("ohh, yeah");
 #ifdef EMSCRIPTEN
         emscripten_current_thread_process_queued_calls();
         emscripten_thread_sleep(500);
-        emscripten_sleep(500);
 #endif
     }
-    std::cout << f.get().size() << std::endl;
+    try {
+        std::cout << f.get().size() << std::endl;
+    } catch (...) {
+        std::cout << "future oopos" << std::endl;
+    }
     //auto s = client.querySignals();
 
     /*client.querySignalsAsync([](const auto &entries) {
@@ -82,6 +88,9 @@ void query_devices(auto &client, std::string_view query) {
             fmt::print("- {}\n", entry);
         }
     }, query_filter);*/
+}
+void d() {
+    exit(0);
 }
 
 int main(int argc, char *argv[]) {
@@ -126,5 +135,7 @@ int main(int argc, char *argv[]) {
     } else {
         fmt::print("not enough arguments: {}\n", args);
     }
-    emscripten_cancel_main_loop();
+    //emscripten_cancel_main_loop();
+    int ret = 0;
+    emscripten_async_run_in_main_runtime_thread(EM_FUNC_SIG_VI, exit, 0);
 }

@@ -93,6 +93,8 @@ private:
 #define DEBUG_VARIABLES(...)
 #else
 
+#define _DEBUG_POSTFIXES_1
+#define _DEBUG_PREFIXES_1 ""
 #ifdef EMSCRIPTEN
 #define _DEBUG_EMSCRIPTEN_THREADS_ "(emscripten mainthread/mainruntimethread) (" <<  emscripten_is_main_runtime_thread() << "/" << emscripten_is_main_browser_thread() << ")"
 #ifndef NDEBUGEMSCRIPTEN
@@ -105,11 +107,11 @@ private:
 #define _DEBUG_PREFIXES   __FILE__<<":"<<__LINE__ << " @ " << __PRETTY_FUNCTION__ << ": "
 
 #define DEBUG_VARIABLES(...) do { \
-    std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << _DEBUG_PREFIXES_1 << #__VA_ARGS__ << ": "; \
     logVars(__VA_ARGS__); \
+    std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << _DEBUG_PREFIXES_1 << #__VA_ARGS__ << ": "; \
     std::cout << std::endl; \
 } while(0)
-#define DEBUG_LOG(msg) std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << msg << std::endl;
+#define DEBUG_LOG(msg) std::cout << msg << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << std::endl;
 template<typename T>
 void logVars(const T& val) {
     std::cout << val;

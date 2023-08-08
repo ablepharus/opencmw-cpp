@@ -20,11 +20,25 @@
 
 namespace opencmw::service::dns {
 
+struct DnsClient;
+template<typename T >//TODO hold stuff
+struct EmscriptenCallback {
+    std::function<T> func;
+};
+
+static std::vector<EmscriptenCallback<void(std::vector<Entry>)>> dns_client_callbacks;
+
+
+struct ClientContextCallback : EmscriptenCallback<void(const mdp::Message &msg)> {
+    int index;
+};
+static std::vector<ClientContextCallback> dns_clientcontext_callbacks;
+
 class DnsClient {
     client::ClientContext &_clientContext;
     URI<STRICT>            _endpoint;
 
-
+#ifdef EMSCRIPTEN
     static int __set_callback(std::atomic_bool* done, mdp::Message* answer,     std::function<void(const mdp::Message &)> *callback) {
         DEBUG_LOG("yeah, setting callback in main");
         *callback = [] (const mdp::Message &msg) {
@@ -34,6 +48,7 @@ class DnsClient {
     void _set_callback_on_main(std::atomic_bool* done, mdp::Message* answer, std::function<void(const mdp::Message&)> *callback) {
         emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VIII, __set_callback, done, answer, callback);
     }
+#endif // EMSCRIPTEN
 
 public:
     DnsClient(client::ClientContext &clientContext, const URI<STRICT> &endpoint)
@@ -52,6 +67,13 @@ public:
 
         }
     }
+
+    // we need this, because if we create an object from a worker and try to destroy it from the main
+    //  thread later, we get an error
+    static void prepareMainCallback(int index) {
+
+    }
+
     void querySignalsAsync(std::function<void(std::vector<Entry>)> callback, const Entry &filter = {}) {
         auto uri = URI<>::factory(_endpoint);
         auto uri2      = std::move(uri).setQuery(query::serialise(filter)).build();
@@ -61,17 +83,36 @@ public:
         auto puri = new URI<>{"http://localhost:8055/dns"};
 
         std::cout << &callback << finalUri.str() << std::endl;
+        //service::dns::dns_client_callbacks.push_back({callback});
+        auto index = dns_client_callbacks.size()-1;
+        auto ci = dns_clientcontext_callbacks.size();
+        /*dns_clientcontext_callbacks.push_back({
+                                               [ci, index](const mdp::Message &msg) {
+                    std::cout << msg.error << std::endl;
+                    IoBuffer      buf{ msg.data };
+                    FlatEntryList resp;
+                    //deserialise<YaS, ProtocolCheck::IGNORE>(buf, resp);
 
-        _clientContext.get(*uri3, [&callback](const mdp::Message &msg) {
-            std::cout << "call back " << &callback << std::endl;
+                    //callback(resp.toEntries());
+                    //dns_client_callbacks[ci].func(resp.toEntries());
+                    //msg.
+
+                    DEBUG_LOG("inside clientContext callback");
+                    // callback(resp.toEntries());
+                }, (int)dns_clientcontext_callbacks.size()});
+*/
+        //_clientContext.get(*uri3, [](const mdp::Message &msg) {return ;});// dns_clientcontext_callbacks[ci].func);
+        _clientContext.get(*uri3, [index, &callback](const mdp::Message &msg) {
             std::cout << msg.error << std::endl;
             IoBuffer      buf{ msg.data };
             FlatEntryList resp;
             // deserialise<YaS, ProtocolCheck::IGNORE>(buf, resp);
             callbacky({});
             callback(resp.toEntries());
+            //dns_client_callbacks[index].func(resp.toEntries());
 
             DEBUG_LOG("inside clientContext callback");
+            //callback(resp.toEntries());
             });
         DEBUG_LOG("uri gets destroyed? O.O")
     }
@@ -118,7 +159,7 @@ public:
         };*/
         while (true)
         {
-            emscripten_current_thread_process_queued_calls();
+            //emscripten_current_thread_process_queued_calls();
            // emscripten_sleep(500);
             std::unique_lock l{m};
             //DEBUG_LOG("locked")
@@ -153,14 +194,14 @@ public:
         FlatEntryList entrylist{ entries };
         opencmw::serialise<YaS>(buf, entrylist);
 
-        _clientContext.set(
+/*        _clientContext.set(
                 _endpoint, [&callback](auto &msg) {
                     FlatEntryList resp;
                     IoBuffer      buf{ msg.data };
                     deserialise<YaS, ProtocolCheck::ALWAYS>(buf, resp);
                     callback(resp.toEntries());
                 },
-                std::move(buf));
+                std::move(buf)); */
     }
 
     std::vector<Entry> registerSignals(const std::vector<Entry> &entries) {
@@ -197,7 +238,7 @@ public:
 
     }
 
-    std::future<dns::FlatEntryList> querySignalsListFuture(std::promise<dns::FlatEntryList>& promise, const Entry &filter) {
+    std::future<dns::FlatEntryList> querySignalsListFuture(std::promise<dns::FlatEntryList>& promise, const Entry &filter = {}) {
         std::promise<dns::FlatEntryList> res;
         auto uri       = URI<>::factory();
 
@@ -211,7 +252,7 @@ public:
             std::cout << "promise callback" << std::endl;
             FlatEntryList r;
             if (answer.data.size()) {
-                opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, r);
+                //opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, r);
 
             } else {
                 std::cout << "empty result :/" << std::endl;
@@ -235,6 +276,7 @@ public:
         *callback = [] (const mdp::Message &msg) {
             DEBUG_LOG("yeah, callback")
         };
+        return 0;
     }
     void _set_callback_on_main(std::atomic_bool* done, mdp::Message* answer, std::function<void(const mdp::Message&)> *callback) {
         emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VIII, __set_callback, done, answer, callback);
@@ -284,7 +326,7 @@ public:
         if (answer.data.empty()) {
             std::cerr << "empty data" << std::endl;
         } else {
-            opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, res);
+            //opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, res);
         }
 
         return res.toEntries();
@@ -319,7 +361,7 @@ public:
 
         FlatEntryList res;
         if (!answer.data.empty()) {
-            opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, res);
+            //opencmw::deserialise<YaS, ProtocolCheck::ALWAYS>(answer.data, res);
         }
         return res.toEntries();
     }
@@ -328,6 +370,8 @@ public:
         return registerSignals({ entry })[0];
     }
 };
+
+
 
 } // namespace opencmw::service::dns
 
