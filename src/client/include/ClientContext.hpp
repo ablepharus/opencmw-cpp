@@ -92,7 +92,10 @@ private:
                     return false;
                 }
                 auto &c = getClientCtx(cmd.endpoint);
-                c.request(cmd);
+                std::thread {[&c, cmd]() {
+                        c.request(cmd);
+                    }}.detach();
+
 #ifdef EMSCRIPTEN
                 //emscripten_current_thread_process_queued_calls();
 //                DEBUG_LOG("INNER")

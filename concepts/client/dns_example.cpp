@@ -135,6 +135,7 @@ int main(int argc, char *argv[]) {
     } else {
         fmt::print("not enough arguments: {}\n", args);
     }
+
     //emscripten_cancel_main_loop();
     int ret = 0;
     emscripten_async_run_in_main_runtime_thread(EM_FUNC_SIG_VI, exit, 0);

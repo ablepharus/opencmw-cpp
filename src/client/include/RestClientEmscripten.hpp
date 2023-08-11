@@ -72,6 +72,7 @@ struct FetchPayload {
         const auto errorMsg         = msgOK ? "" : fmt::format("{} - {}:{}", status, errorMsgExt, selectedErrorMsg(hasErrorMessage));
 
         try {
+            DEBUG_LOG("")
             command.callback(mdp::Message{
                              .id              = 0,
                              .arrivalTime     = std::chrono::system_clock::now(),
@@ -268,14 +269,14 @@ private:
             DEBUG_LOG("onfailure")
             DEBUG_VARIABLES(fetch->numBytes, fetch->statusText, fetch->status);
             getPayload(fetch)->onerror(fetch->status, std::string_view(fetch->data, detail::checkedStringViewSize(fetch->numBytes)), fetch->statusText);
-            emscripten_fetch_close(fetch);
+            //emscripten_fetch_close(fetch);
         };
 
         // TODO: Pass the payload as POST body: emscripten_fetch(&attr, uri.relativeRef()->data());
 
         DEBUG_VARIABLES(emscripten_is_main_browser_thread(), emscripten_is_main_runtime_thread());
         auto d = URI<>::factory(uri).addQueryParameter("_bodyOverride", body).build().str().data();
-        if ( emscripten_is_main_runtime_thread()) {
+        if ( true || emscripten_is_main_runtime_thread()) {
             emscripten_fetch(&attr, d);
         } else {
             emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VII, fetch, attr, d);

@@ -63,9 +63,8 @@ log() {
         REQUIRE_THROWS_AS(cond, exception); \
     } while ((void) 0, 0)
 
-#define DEBUG_VARIABLES( \
-                         \
-        )
+
+
 
 class DebugBeforeAfter {
 public:
@@ -91,27 +90,28 @@ private:
 #ifdef NDEBUG
 #define DEBUG_BEFORE_AFTER
 #define DEBUG_VARIABLES(...)
+#define DEBUG_LOG(msg)
 #else
 
-#define _DEBUG_POSTFIXES_1
 #define _DEBUG_PREFIXES_1 ""
+#define _DEBUG_PREFIXES_2 ""
+
 #ifdef EMSCRIPTEN
 #define _DEBUG_EMSCRIPTEN_THREADS_ "(emscripten mainthread/mainruntimethread) (" <<  emscripten_is_main_runtime_thread() << "/" << emscripten_is_main_browser_thread() << ")"
-#ifndef NDEBUGEMSCRIPTEN
 
-#else
-#define
-#endif // NDEBUGEMSCRIPTEN
+#ifndef NDEBUGEMSCRIPTEN
 #define _DEBUG_PREFIXES_1 _DEBUG_EMSCRIPTEN_THREADS_
+#endif
 #endif // EMSCRIPTEN
-#define _DEBUG_PREFIXES   __FILE__<<":"<<__LINE__ << " @ " << __PRETTY_FUNCTION__ << ": "
+
+#define _DEBUG_PREFIXES  "\t\t\t|" << __FILE__<<":"<<__LINE__ << " @ " << __PRETTY_FUNCTION__ << ": " << _DEBUG_PREFIXES_1 << _DEBUG_PREFIXES_2
 
 #define DEBUG_VARIABLES(...) do { \
-    logVars(__VA_ARGS__); \
-    std::cout << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << _DEBUG_PREFIXES_1 << #__VA_ARGS__ << ": "; \
+    std::cout << "(" << #__VA_ARGS__ << ") {"; logVars(__VA_ARGS__); std::cout << "}"; \
+    std::cout << _DEBUG_PREFIXES << #__VA_ARGS__ << ": "; \
     std::cout << std::endl; \
 } while(0)
-#define DEBUG_LOG(msg) std::cout << msg << _DEBUG_PREFIXES << _DEBUG_PREFIXES_1 << std::endl;
+#define DEBUG_LOG(msg) std::cout << msg << _DEBUG_PREFIXES << std::endl;
 template<typename T>
 void logVars(const T& val) {
     std::cout << val;
@@ -119,7 +119,7 @@ void logVars(const T& val) {
 
 template<typename T, typename... Args>
 void logVars(const T& val, const Args&... args) {
-    std::cout << val << "\t";
+    std::cout << val << ", ";
     logVars(args...);
 }
 
@@ -127,6 +127,17 @@ void logVars(const T& val, const Args&... args) {
 DEBUG_LOG("A")               \
 expr;                       \
 DEBUG_LOG("B");
+#define DEBUG_LOG_EVERY_SECOND(msg) \
+    { \
+        static auto lastTime = std::chrono::steady_clock::now(); \
+        auto currentTime = std::chrono::steady_clock::now(); \
+        if (std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastTime).count() >= 1) { \
+            lastTime = currentTime; \
+            DEBUG_LOG(msg); \
+        } \
+    }
+
+//#define DEBUG_LOG_EVERY_SECOND(msg) DEBUG_LOG_EVERY_SECOND_IMPL(msg); static bool DEBUG_LOG_EVERY_SECOND_DUMMY_VAR = (DEBUG_LOG_EVERY_SECOND_IMPL(""), true);
 
 
 

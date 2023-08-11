@@ -86,7 +86,7 @@ public:
         //service::dns::dns_client_callbacks.push_back({callback});
         auto index = dns_client_callbacks.size()-1;
         auto ci = dns_clientcontext_callbacks.size();
-        /*dns_clientcontext_callbacks.push_back({
+        dns_clientcontext_callbacks.push_back({
                                                [ci, index](const mdp::Message &msg) {
                     std::cout << msg.error << std::endl;
                     IoBuffer      buf{ msg.data };
@@ -100,16 +100,16 @@ public:
                     DEBUG_LOG("inside clientContext callback");
                     // callback(resp.toEntries());
                 }, (int)dns_clientcontext_callbacks.size()});
-*/
+
         //_clientContext.get(*uri3, [](const mdp::Message &msg) {return ;});// dns_clientcontext_callbacks[ci].func);
-        _clientContext.get(*uri3, [index, &callback](const mdp::Message &msg) {
+        _clientContext.get(*uri3, [ci, &callback](const mdp::Message &msg) {
             std::cout << msg.error << std::endl;
             IoBuffer      buf{ msg.data };
             FlatEntryList resp;
             // deserialise<YaS, ProtocolCheck::IGNORE>(buf, resp);
             callbacky({});
-            callback(resp.toEntries());
-            //dns_client_callbacks[index].func(resp.toEntries());
+            //callback(resp.toEntries());
+            dns_client_callbacks[ci].func(resp.toEntries());
 
             DEBUG_LOG("inside clientContext callback");
             //callback(resp.toEntries());
