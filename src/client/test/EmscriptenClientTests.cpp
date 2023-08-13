@@ -15,11 +15,11 @@
 #include "Debug.hpp"
 
 
-//#define TEST_IN_MAIN
-//#define TEST_IN_MAINLOOP
+#define TEST_IN_MAIN
+#define TEST_IN_MAINLOOP
 
 //#define TESTS_RUN_IN_THREADS
-#define RUN_TESTS_BEFORE_MAIN
+//#define RUN_TESTS_BEFORE_MAIN
 
 #define TEST_SIMPLE_REQUEST
 #define TEST_SIMPLE_REQUEST_WAITABLE
@@ -311,22 +311,29 @@ ADD_TESTCASE(TestRestClientSync)
 #endif
 
 #ifdef TEST_CONTEXTCLIENT_FUTURE
-struct TestContextClient : FutureTestcase<service::dns::Entry> {
-     std::vector<std::unique_ptr<opencmw::client::ClientBase>> clients;
-    client::ClientContext   clientContext{ std::move(clients) };
-    service::dns::DnsClient dnsclient{ clientContext, URI<>{ "http://localhost:8055/dns" } };
-    TestContextClient()
-    :clients(std::move(std::make_unique<client::RestClient>(opencmw::client::DefaultContentTypeHeader(MIME::BINARY))))
+struct TestContextClient : FutureTestcase<std::vector<service::dns::Entry>> {
+    using FutureTestcase<std::vector<service::dns::Entry>>::FutureTestcase;
+    std::unique_ptr<client::ClientContext>   clientContext;
+    std::unique_ptr<service::dns::DnsClient> dnsClient;
+
+    TestContextClient(std::string name)
+            :FutureTestcase<std::vector<service::dns::Entry>>(name)
     {
-        clients.emplace_back();
+        std::vector<std::unique_ptr<opencmw::client::ClientBase>> clients;
+        clients.emplace_back(std::make_unique<client::RestClient>(opencmw::client::DefaultContentTypeHeader(MIME::BINARY)));
+        clientContext = std::make_unique<client::ClientContext>(std::move(clients));
+        dnsClient = std::make_unique<service::dns::DnsClient>(*clientContext.get(), URI<>{ "http://localhost:8055/dns" });
+
+        future = promise.get_future();
     }
 
     void _run() {
         std::vector<service::dns::Entry> signals;
 
-        signals = dnsclient.querySignals();
-        clientContext.stop();
-        //promise.set_value(signals);
+        DEBUG_FINISH(signals = dnsClient.get()->querySignals();)
+
+        clientContext->stop();
+        promise.set_value(signals);
     }
 
 };
