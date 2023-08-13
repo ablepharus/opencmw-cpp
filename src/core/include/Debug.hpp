@@ -124,9 +124,10 @@ void logVars(const T& val, const Args&... args) {
 }
 
 #define DEBUG_FINISH(expr) \
-DEBUG_LOG("A")               \
+DEBUG_LOG(#expr)               \
 expr;                       \
-DEBUG_LOG("B");
+DEBUG_LOG("~" << #expr);
+
 #define DEBUG_LOG_EVERY_SECOND(msg) \
     { \
         static auto lastTime = std::chrono::steady_clock::now(); \

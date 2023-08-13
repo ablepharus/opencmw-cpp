@@ -106,10 +106,10 @@ public:
             std::cout << msg.error << std::endl;
             IoBuffer      buf{ msg.data };
             FlatEntryList resp;
-            // deserialise<YaS, ProtocolCheck::IGNORE>(buf, resp);
+            //deserialise<YaS>(buf, resp);
             callbacky({});
-            //callback(resp.toEntries());
-            dns_client_callbacks[ci].func(resp.toEntries());
+            callback(resp.toEntries());
+            //dns_client_callbacks[ci].func(resp.toEntries());
 
             DEBUG_LOG("inside clientContext callback");
             //callback(resp.toEntries());
@@ -126,6 +126,16 @@ public:
                 promise.set_value(response_entries);
             }};
         querySignalsAsync(*a);
+    }
+    std::vector<Entry> querySignalsSyncFut() {
+        std::promise<std::vector<Entry>> res;
+        querySignalsFuture(res);
+        auto f = res.get_future();
+
+        while (f.wait_until(std::chrono::system_clock::now()) == std::future_status::timeout) {
+            ;
+        }
+        return f.get();
     }
     std::vector<Entry> querySignals(const Entry &filter = {}) {
         std::atomic_bool   received{ false };
@@ -157,6 +167,7 @@ public:
             cv.wait_for(l, std::chrono::microseconds {500}, [&received](){return received.load(std::memory_order_relaxed);
             });
         };*/
+            DEBUG_FINISH(        received.wait(false, std::memory_order_release) )
         while (true)
         {
             //emscripten_current_thread_process_queued_calls();

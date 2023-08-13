@@ -87,19 +87,29 @@ public:
 private:
     void poll(const std::atomic_bool &stop_requested) {
         while (!stop_requested) { // switch to event processor instead of busy spinning
+            DEBUG_LOG_EVERY_SECOND("polling")
             _cmdPoller->poll([this](Command &cmd, std::int64_t /*sequenceID*/, bool /*endOfBatch*/) -> bool {
                 if (cmd.command == mdp::Command::Invalid) {
                     return false;
                 }
                 auto &c = getClientCtx(cmd.endpoint);
-                std::thread {[&c, cmd]() {
+#define DO_IN_THREAD
+#ifdef DO_IN_THREAD
+                std::thread ql{[&c, cmd]() {
+#endif
                         c.request(cmd);
-                    }}.detach();
+#ifdef DO_IN_THREAD
+                    }};
+//                DEBUG_FINISH( ql.join() );
+                //ql.join();
+                ql.detach();
+#endif
 
 #ifdef EMSCRIPTEN
                 //emscripten_current_thread_process_queued_calls();
 //                DEBUG_LOG("INNER")
 #endif
+
                 return false;
             });
 #ifdef EMSCRIPTEN

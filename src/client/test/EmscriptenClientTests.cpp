@@ -16,9 +16,10 @@
 
 
 //#define TEST_IN_MAIN
-#define TEST_IN_MAINLOOP
+//#define TEST_IN_MAINLOOP
 
-#define TESTS_RUN_IN_THREADS
+//#define TESTS_RUN_IN_THREADS
+#define RUN_TESTS_BEFORE_MAIN
 
 #define TEST_SIMPLE_REQUEST
 #define TEST_SIMPLE_REQUEST_WAITABLE
@@ -309,14 +310,14 @@ ADD_TESTCASE(TestRestClient)
 ADD_TESTCASE(TestRestClientSync)
 #endif
 
-#undef TEST_CONTEXTCLIENT_FUTURE
 #ifdef TEST_CONTEXTCLIENT_FUTURE
 struct TestContextClient : FutureTestcase<service::dns::Entry> {
-    std::vector<std::unique_ptr<opencmw::client::ClientBase>> clients{std::move(std::make_unique<client::RestClient>(opencmw::client::DefaultContentTypeHeader(MIME::BINARY)))};
-
+     std::vector<std::unique_ptr<opencmw::client::ClientBase>> clients;
     client::ClientContext   clientContext{ std::move(clients) };
     service::dns::DnsClient dnsclient{ clientContext, URI<>{ "http://localhost:8055/dns" } };
-    TestContextClient() {
+    TestContextClient()
+    :clients(std::move(std::make_unique<client::RestClient>(opencmw::client::DefaultContentTypeHeader(MIME::BINARY))))
+    {
         clients.emplace_back();
     }
 
@@ -325,10 +326,10 @@ struct TestContextClient : FutureTestcase<service::dns::Entry> {
 
         signals = dnsclient.querySignals();
         clientContext.stop();
-        promise.set_value(signals);
+        //promise.set_value(signals);
     }
 
-}};
+};
 ADD_TESTCASE(TestContextClient)
 #endif
 
@@ -363,7 +364,7 @@ void wait_for_results() {
     }
 }
 
-
+bool ayokay = std::all_of(tests.begin(), tests.end(), [](auto a ) {return 0;});
 int main(int argc, char* argv[]) {
     emscripten_trace_configure_for_google_wtf();
 
