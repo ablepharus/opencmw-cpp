@@ -11,6 +11,7 @@
 #include <disruptor/Disruptor.hpp>
 #include <MdpMessage.hpp>
 #include <URI.hpp>
+#include <Debug.hpp>
 
 #include "ClientCommon.hpp"
 
@@ -93,16 +94,20 @@ private:
                     return false;
                 }
                 auto &c = getClientCtx(cmd.endpoint);
+#ifdef EMSCRIPTEN
 #define DO_IN_THREAD
+#endif
+
+
 #ifdef DO_IN_THREAD
                 std::thread ql{[&c, cmd]() {
 #endif
                         c.request(cmd);
 #ifdef DO_IN_THREAD
                     }};
-//                DEBUG_FINISH( ql.join() );
+                DEBUG_FINISH( ql.join() );
                 //ql.join();
-                ql.detach();
+//                ql.detach();
 #endif
 
 #ifdef EMSCRIPTEN

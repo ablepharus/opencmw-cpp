@@ -10,25 +10,53 @@
 #include <algorithm>
 #include <chrono>
 
-#include "src/services/include/services/dns_client.hpp"
-#include "src/services/include/services/dns_types.hpp"
+
+#include <services/dns_client.hpp>
 #include "Debug.hpp"
 
 
-#define TEST_IN_MAIN
-#define TEST_IN_MAINLOOP
+/*
+ to run tests:
+   in the browser
+ run the server: concepts/client ./dns_example server http://localhost:8055/dns mdp://inproc
+   in node
+ npm install xhr2
+*/
+
+
+// tests are either started before or in main
+// for proper operation we need a main loop which returns control to the main/js thread
+//  do this WITH_MAINLOOP, setting a main loop and exiting main into it
+
+//#define TEST_IN_MAIN
+//#define TEST_WITH_MAINLOOP
 
 //#define TESTS_RUN_IN_THREADS
 //#define RUN_TESTS_BEFORE_MAIN
+#define RUN_WITH_TIMEOUT std::chrono::seconds{3}
+
+#define PROXY_FETCH_TO_MAIN
+
 
 #define TEST_SIMPLE_REQUEST
-#define TEST_SIMPLE_REQUEST_WAITABLE
+//
+// ; fetch fails
+//#define TEST_SIMPLE_REQUEST_WAITABLE
+// there is thread proxying in emscripten, but this doesn't help, because fetches are worked upon in the runtime thread
+// works in mainloop;
 #define TEST_FETCH_PROXYING
-#define TEST_REST_CLIENT_MANUAL
-#define TEST_REST_CLIENT
-#define TEST_REST_CLIENT_FUTURE
+// uses DnsRestClient but build command by hand
+// works in mainloop; fetch fails immediately in node and build down throws, fetch never fetched in chromium
+//#define TEST_REST_CLIENT_MANUAL
+//#define TEST_REST_CLIENT
+//#define TEST_REST_CLIENT_FUTURE
 #define TEST_CONTEXTCLIENT_FUTURE
-#define TEST_REST_CLIENT_SYNC
+//#define TEST_REST_CLIENT_SYNC
+
+#if defined(TEST_FETCH_PROXYING)
+#define NEED_SIMPLE_REQUEST
+#endif
+
 
 using namespace opencmw;
 struct TestCase;
@@ -36,6 +64,12 @@ struct TestCase;
 static std::vector<TestCase*> tests;
 
 struct TestCase {
+    enum TestState {
+        RUNNING,
+        FINISHED_UNKNOWN,
+        FINISHED_SUCCESS,
+        FINISHED_FAILURE} state = RUNNING;
+
     TestCase(std::string testname = "test"):name(testname){
         tests.push_back(this);
     }
@@ -44,9 +78,12 @@ struct TestCase {
     void run() {
         DEBUG_LOG("Running " + name);
         _run();
-        DEBUG_LOG(name + " Finished")
+        DEBUG_LOG(name + " ran through")
     }
-    virtual bool ready() { return true; }
+    virtual bool ready() {
+
+        return state != RUNNING; }
+    virtual bool success() { return state == FINISHED_SUCCESS; }
     virtual ~TestCase() = default;
     std::string name;
 };
@@ -70,6 +107,51 @@ struct FutureTestcase : TestCase{
 #define ADD_TESTCASE(name) #name Testcase_#name; tests.push_back(Testcase_#name);
 #endif
 
+
+#ifdef RUN_WITH_TIMEOUT
+/**
+ * The `Timeout` class records the time of creation and allows you to check
+ * whether a specified timeout duration has passed since its creation.
+ */
+class Timeout {
+public:
+    explicit Timeout(const std::chrono::steady_clock::duration& duration) :
+        start_time_(std::chrono::steady_clock::now()), duration_(duration) {}
+
+    /* @brief Check if the timeout duration has passed.
+     * @return `true` if the timeout duration has passed, `false` otherwise.
+     */
+    bool operator()() const {
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed_time = current_time - start_time_;
+        return elapsed_time >= duration_;
+    }
+
+private:
+    std::chrono::steady_clock::time_point start_time_; ///< The time of creation.
+    std::chrono::steady_clock::duration duration_;     ///< The timeout duration.
+};
+#endif // RUN_WITH_TIMEOUT
+
+auto find_all(auto list, auto predicate) {
+    decltype(list) res;
+    auto it = list.begin();
+    do {
+        it = std::find_if(next(it), list.end(), predicate);
+        if (it != list.end()) {
+            res.push_back(*it);
+        }
+    } while(it != list.end());
+    return res;
+}
+
+// returns found elements as a " " concatenated string
+auto find_all_string(auto list, auto predicate) {
+    std::string res;
+    std::ranges::for_each(find_all(list, predicate), [&res](auto a) { res += a->name + " "; });
+    return res;
+}
+
 void run_tests() {
     std::for_each(tests.begin(), tests.end(), [](TestCase* t) {
         DEBUG_LOG(t->name);
@@ -82,30 +164,32 @@ void run_tests() {
     });
 }
 
-
-#ifdef TEST_SIMPLE_REQUEST
-
-void downloadSucceeded(emscripten_fetch_t *fetch) {
-     printf("Finished downloading %llu bytes from URL %s.\n", fetch->numBytes, fetch->url);
-     // The data is now available at fetch->data[0] through fetch->data[fetch->numBytes-1];
-     emscripten_fetch_close(fetch); // Free data associated with the fetch.
- }
-
-void downloadFailed(emscripten_fetch_t *fetch) {
-    printf("Downloading %s failed, HTTP failure status code: %d.\n", fetch->url, fetch->status);
-     emscripten_fetch_close(fetch); // Also free data on failure.
+std::string still_running_tests() {
+    std::string res = find_all_string(tests, [](TestCase* t) {
+        DEBUG_LOG(!t->ready())
+        return !t->ready();
+    });
+    DEBUG_VARIABLES(res)
+#ifdef RUN_WITH_TIMEOUT
+    static Timeout testsTimeout{RUN_WITH_TIMEOUT};
+    if (res != "" && testsTimeout()) {
+        DEBUG_LOG("Timeout hit, the following Tests are still running and will be cancelled -" + res)
+        return "";
+    }
+#endif // RUN_WITH_TIMEOUT
+    return res;
 }
+
+
+#if defined(TEST_SIMPLE_REQUEST) or defined(NEED_SIMPLE_REQUEST)
+
 struct TestEmscriptenRequest : TestCase {
      using TestCase::TestCase;
 
      std::atomic_bool dataReady{ false };
 
-     bool ready() override {
-         return dataReady.load();
-     }
-
      void _run() override {
-        DEBUG_LOG("requesting");
+        DEBUG_LOG("requesting " + name);
         emscripten_fetch_attr_t attr;
         emscripten_fetch_attr_init(&attr);
         strcpy(attr.requestMethod, "GET");
@@ -118,9 +202,10 @@ struct TestEmscriptenRequest : TestCase {
 
      static void downloadSucceeded(emscripten_fetch_t* fetch) {
         TestEmscriptenRequest* self = static_cast<TestEmscriptenRequest*>(fetch->userData);
-        // Process fetch results...
+        self->state = FINISHED_SUCCESS;
         self->dataReady.store(true);
-        //self->cv.notify_one();
+        self->dataReady.notify_all();
+        DEBUG_LOG("FINISHED - " + self->name)
 
         printf("Finished downloading %llu bytes from URL %s.\n", fetch->numBytes, fetch->url);
         // The data is now available at fetch->data[0] through fetch->data[fetch->numBytes-1];
@@ -128,36 +213,17 @@ struct TestEmscriptenRequest : TestCase {
      }
 
      static void downloadFailed(emscripten_fetch_t* fetch) {
+        TestEmscriptenRequest* self = static_cast<TestEmscriptenRequest*>(fetch->userData);
+        self->state = FINISHED_FAILURE;
         printf("Finished downloading %llu bytes from URL %s.\n", fetch->numBytes, fetch->url);
         // The data is now available at fetch->data[0] through fetch->data[fetch->numBytes-1];
         emscripten_fetch_close(fetch); // Free data associated with the fetch.
      }
 };
-//
-//struct TestEmscriptenRequest : TestCase {
-//     using TestCase::TestCase;
-//     // std::atomic_bool... (false)
-//     // std::conditional variable
-//     bool ready() override {
-//        // do a wait_util on conditional variable, if the value is available to load, return true
-//        //  unless ready is false?   there can be problems with deadlocks on atamics, that why the
-//        // check on the cv, does that make sense? or do we just run into the deadlock when loading
-//        // the value of the atomic, because the cv only says it's accessible, not that it is ready
-//     }
-//     void _run() override{
-//        DEBUG_LOG("requesting");
-//        emscripten_fetch_attr_t attr;
-//        emscripten_fetch_attr_init(&attr);
-//        strcpy(attr.requestMethod, "GET");
-//        attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
-//        attr.onsuccess  = downloadSucceeded;
-//        attr.onerror    = downloadFailed;
-//        attr.userData = this;
-//        emscripten_fetch(&attr, "http://localhost:8055/dns");
-//     }
-//};
-ADD_TESTCASE(TestEmscriptenRequest)
+#endif // TEST/NEED _SIMPLE_REQUEST
 
+#ifdef TEST_SIMPLE_REQUEST
+ADD_TESTCASE(TestEmscriptenRequest)
 #endif
 
 #ifdef TEST_FETCH_PROXYING
@@ -169,53 +235,69 @@ ADD_TESTCASE(TestEmscriptenRequest)
 
 emscripten::ProxyingQueue queue;
 
-std::atomic<bool> should_quit{false};
-void looper_main() {
-     while (!should_quit) {
-        queue.execute();
-        sched_yield();
-     }
-}
-
-void returner_main() {
-     // Return back to the event loop while keeping the runtime alive.
-     // Note that we can't use `emscripten_exit_with_live_runtime` here without
-     // introducing a memory leak due to way to C++11 threads interact with
-     // unwinding. See https://github.com/emscripten-core/emscripten/issues/17091.
-     emscripten_runtime_keepalive_push();
-}
-
 struct TestFetchProxying : TestCase {
      using TestCase::TestCase;
-     std::thread       looper;
-     std::thread       returner;
-     std::atomic<bool> should_quit{ false };
+     std::thread       looper{[this]() { this->looper_run(); }};
+     std::thread       returner{[this]() { this->returner_run(); }};
+     std::atomic_bool threaded_done{ false };
      std::atomic_bool looper_done{false};
      std::atomic_bool returner_done{false};
+     std::atomic_bool looper_quit{false};
+     std::atomic_bool should_quit{false};
+     std::thread q{ [this]() {
+         // this code will never return
+         t.run();
+         t2.run();
+         threaded_done = true;
+     } };
+     // the requests used by l_ooper r_eturner and the threaded variant
+     TestEmscriptenRequest tl{"ProxyingLooper"}, tr{"ProxyingReturner"}, t{"ProxyingThreaded"}, tl2{"ProxyingLooper2"}, tr2{"ProxyingReturner2"}, t2{"ProxyingThreaded2"};
 
-     // The queue used to send work to both `looper` and `returner`.
-     TestEmscriptenRequest t;
+     void looper_run() {
+        DEBUG_LOG("looper_run")
+        while (!looper_quit && !tl.ready() && !tl2.ready()) {
+            DEBUG_LOG_EVERY_SECOND("LOOOOOOPING")
+            queue.execute();
+            sched_yield();
+        }
+        DEBUG_LOG("!looper_run")
+     }
+     void returner_run() {
+        DEBUG_LOG("returner_run")
+        // Return back to the event loop while keeping the runtime alive.
+        // Note that we can't use `emscripten_exit_with_live_runtime` here without
+        // introducing a memory leak due to way to C++11 threads interact with
+        // unwinding. See https://github.com/emscripten-core/emscripten/issues/17091.
+        if (!should_quit)
+            emscripten_runtime_keepalive_push();
+        else
+            DEBUG_LOG("~returner_run")
+     }
 
      bool ready() {
-        return should_quit && looper_done && returner_done;
+        auto a = threaded_done && looper_done && returner_done && tl.ready() && tr.ready() && t.ready();
+        if (tl.ready() && tr.ready()) {
+            should_quit = true;
+        }
+        DEBUG_LOG(a);
+        return a;
      }
 
      void _run () {
-//        t.run();
-        std::thread q{ [this]() {
-            t.run();
-        } };
-
-        // Proxy to looper.
-        {
-            queue.proxyAsync(looper.native_handle(), [&]() { t.run(); looper_done = true; });
+        { // Proxy to looper.
+            queue.proxyAsync(looper.native_handle(), [&]() { tl.run(); tl2.run(); looper_done = true; });
         }
-
-        // Proxy to returner.
-        {
-            queue.proxyAsync(returner.native_handle(), [&]() { t.run(); returner_done = true; });
+        { // Proxy to returner.
+            queue.proxyAsync(returner.native_handle(), [&]() { tr.run(); tr2.run(); returner_done = true; });
         }
-        q.join();
+        // run threaded
+
+         //q.detach(); // be careful with joining here, will stall in many cases
+     }
+
+     ~TestFetchProxying() {
+         should_quit = true;
+
      }
 };
 ADD_TESTCASE(TestFetchProxying)
@@ -234,18 +316,15 @@ struct TestEmscriptenWaitableRequest : public TestCase {
             emscripten_fetch_attr_init(&attr);
             strcpy(attr.requestMethod, "GET");
             attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_WAITABLE;
-            // attr.onsuccess = downloadSucceeded;
-            // attr.onerror = downloadFailed;
             fetch = emscripten_fetch(&attr, "http://localhost:8055/dns");
 
-
             if (ready())
-                std::cout << (fetch->numBytes > 0 ? "waitable works!" : "waitable does not work") << std::endl;
+                state = (fetch->numBytes > 0 ? FINISHED_SUCCESS : FINISHED_FAILURE);
         } }.detach();
      }
-     bool ready() {
+     /*bool ready() {
         return emscripten_fetch_wait(fetch, 0) != EMSCRIPTEN_RESULT_TIMED_OUT;
-     }
+     }*/
 };
 ADD_TESTCASE(TestEmscriptenWaitableRequest)
 #endif // TEST_SIMPLE_REQUEST_WAITABLE
@@ -305,6 +384,7 @@ ADD_TESTCASE(TestRestClient)
      void _run() override {
         service::dns::DnsRestClient r{ "http://localhost:8055/dns" };
         promise.set_value(r.querySignals());
+        state = FINISHED_SUCCESS;
      }
  };
 ADD_TESTCASE(TestRestClientSync)
@@ -334,33 +414,36 @@ struct TestContextClient : FutureTestcase<std::vector<service::dns::Entry>> {
 
         clientContext->stop();
         promise.set_value(signals);
+        state = FINISHED_SUCCESS;
     }
 
 };
 ADD_TESTCASE(TestContextClient)
 #endif
 
-
 void wait_for_results() {
-    static bool run_once{false};  // in case we run tests without result
-    if (!run_once) {
-        run_once = true;
-        //run_tests();
+    static bool ran_once{false};  // in case we run tests without result
+    if (!ran_once) {
+        ran_once = true;
         return;
     }
     DEBUG_LOG_EVERY_SECOND("waiting for results");
 
-     bool ready = std::all_of(tests.begin(), tests.end(), [](TestCase* t) {
-        return t->ready();
-     });
-
-    if (ready) {
+    if (auto s = still_running_tests() != "") {
+        DEBUG_LOG_EVERY_SECOND("waiting for " + still_running_tests())
+    } else {
         DEBUG_LOG("~wait_for_results")
+
+        // Output test names in different categories
+        std::cout << "Successful tests: " << find_all_string(tests, [](auto *a) { return a->state == TestCase::FINISHED_SUCCESS;}) << std::endl;
+        std::cout << "Failed tests: " << find_all_string(tests, [](auto *a) { return a->state == TestCase::FINISHED_FAILURE || a->state == TestCase::FINISHED_UNKNOWN; }) << std::endl;
+        std::cout << "Still Running tests: " << find_all_string(tests, [](auto *a) { return a->state == TestCase::RUNNING;}) << std::endl;
+
 #ifndef EXIT_RUNTIME
         emscripten_run_script("if (serverOnExit) serverOnExit();");
 #endif
 
-#if defined(TEST_IN_MAINLOOP) & defined(TEST_MAINLOOP_CANCEL)
+#if defined(TEST_WITH_MAINLOOP) & defined(TEST_MAINLOOP_CANCEL)
         emscripten_cancel_main_looop();
 //        emscripten_force_exit(0);
 //        exit(0);
@@ -371,7 +454,7 @@ void wait_for_results() {
     }
 }
 
-bool ayokay = std::all_of(tests.begin(), tests.end(), [](auto a ) {return 0;});
+
 int main(int argc, char* argv[]) {
     emscripten_trace_configure_for_google_wtf();
 
@@ -386,8 +469,8 @@ int main(int argc, char* argv[]) {
     emscripten_run_script("addOnExit(serverOnExit);");
 #endif
 
-#ifdef TEST_IN_MAINLOOP_
-    //emscripten_set_main_loop(wait_for_results, 30, 0);
+#ifdef TEST_WITH_MAINLOOP
+    emscripten_set_main_loop(wait_for_results, 30, 0);
     DEBUG_LOG("main loop set")
     // we are running the tests here. they may not wait for fetch results, because
     // we have to return from main to put the new main loop in effect
@@ -398,10 +481,12 @@ int main(int argc, char* argv[]) {
     while (std::any_of(tests.begin(), tests.end(),
             [](TestCase *t) { return !t->ready(); })) {
         wait_for_results();
+        // throw every conceivable wait, queue process,... in here for good measure
+        //   spoiler: doesn't change a thing
         emscripten_pause_main_loop();
         emscripten_main_thread_process_queued_calls();
         emscripten_current_thread_process_queued_calls();
-//        emscripten_thread_sleep(500);
+        emscripten_thread_sleep(500);
 //        // emscripten_sleep would help, but this requires ASYNCIFY, which is incompatible with exceptions
 //        // emscripten_sleep(500);
         std::this_thread::yield();
@@ -409,7 +494,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    // We have to exit the main thread
+    // We have to exit the main thread for the javascript runtime to run
     DEBUG_LOG("~main")
 }
 

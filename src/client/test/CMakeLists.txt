@@ -48,7 +48,7 @@ target_include_directories(rest_client_only_tests PRIVATE ${CMAKE_SOURCE_DIR})
 
 if (EMSCRIPTEN)
     add_executable(emscripten_client_tests EmscriptenClientTests.cpp)
-    target_link_libraries(emscripten_client_tests PUBLIC opencmw_project_warnings opencmw_project_options client)
+    target_link_libraries(emscripten_client_tests PUBLIC opencmw_project_warnings opencmw_project_options client services)
     target_include_directories(emscripten_client_tests PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_options(emscripten_client_tests PRIVATE -DFETCH_DEBUG)
     target_link_options(emscripten_client_tests PRIVATE --pre-js=/home/alex/dev/opencmw-cpp/pre.js --emrun)
