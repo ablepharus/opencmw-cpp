@@ -1,13 +1,14 @@
 #ifndef DNS_CLIENT_HPP
 #define DNS_CLIENT_HPP
 
-#include "Debug.hpp"
+
+#include <atomic>
+#include <chrono>
+
 #include "Debug.hpp"
 #include "dns_types.hpp"
 #include "MdpMessage.hpp"
 #include "RestClient.hpp"
-#include <atomic>
-#include <chrono>
 #ifdef EMSCRIPTEN
 #include <emscripten/threading.h>
 #endif
@@ -178,7 +179,7 @@ public:
               //  DEBUG_LOG("loading received")
                 return received.load(std::memory_order_relaxed);
             })) {
-                std::cout << 'returning' << std::endl;
+                std::cout << "returning" << std::endl;
                 return resp;
             }
         }
@@ -187,15 +188,6 @@ public:
         DEBUG_FINISH(        received.wait(false, std::memory_order_release) )
 
         return resp;
-    }
-    static void temporaryMain() {
-        std::cout <<"temprorarry" << std::endl;
-        static int i = 0;
-        ++i;
-        if (i=5) {
-            i = 0;
-            emscripten_cancel_main_loop();
-        }
     }
 
     void registerSignalsAsync(std::function<void(std::vector<Entry>)> callback, const std::vector<Entry> &entries) {
@@ -273,6 +265,7 @@ public:
         request(cmd);
         return promise.get_future();
     }
+#ifdef EMSCRIPTEN
     static void callbacky(const mdp::Message& reply) {
         std::cout << "callbacky" << std::endl;
     }
@@ -292,6 +285,7 @@ public:
     void _set_callback_on_main(std::atomic_bool* done, mdp::Message* answer, std::function<void(const mdp::Message&)> *callback) {
         emscripten_sync_run_in_main_runtime_thread(EM_FUNC_SIG_VIII, __set_callback, done, answer, callback);
     }
+#endif
     std::vector<Entry> querySignals(const Entry &filter = {}) {
         auto uri       = URI<>::factory();
 

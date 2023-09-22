@@ -93,12 +93,14 @@ void query_devices(auto &client, std::string_view query) {
         }
     }, query_filter);*/
 }
+#ifdef EMSCRIPTEN
 void spin_once() {
     static int i = 0;
     if (i++ == 2) {
         emscripten_force_exit(0);
     }
 }
+#endif
 
 int main(int argc, char *argv[]) {
 #ifdef EMSCRIPTEN
@@ -143,6 +145,7 @@ int main(int argc, char *argv[]) {
         fmt::print("not enough arguments: {}\n", args);
     }
 
+#ifdef EMSCRIPTEN
 #ifdef PROXY_TO_PTHREAD
     emscripten_pause_main_loop();
 #endif
@@ -152,4 +155,5 @@ int main(int argc, char *argv[]) {
     //int ret = 0;
     //emscripten_async_run_in_main_runtime_thread(EM_FUNC_SIG_VI, exit, 0);
     emscripten_set_main_loop(spin_once, 30, 0);
+#endif // EMSCRIPTEN
 }
