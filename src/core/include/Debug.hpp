@@ -88,9 +88,10 @@ private:
 };
 
 #ifdef NDEBUG
-#define DEBUG_BEFORE_AFTER
 #define DEBUG_VARIABLES(...)
 #define DEBUG_LOG(msg)
+#define DEBUG_FINISH(msg)
+#define DEBUG_LOG_EVERY_SECOND(msg)
 #else
 
 #define _DEBUG_PREFIXES_1 ""
@@ -100,6 +101,7 @@ private:
 #define _DEBUG_EMSCRIPTEN_THREADS_ "(emscripten mainthread/mainruntimethread) (" <<  emscripten_is_main_runtime_thread() << "/" << emscripten_is_main_browser_thread() << ")"
 
 #ifndef NDEBUGEMSCRIPTEN
+#undef _DEBUG_PREFIXES_1
 #define _DEBUG_PREFIXES_1 _DEBUG_EMSCRIPTEN_THREADS_
 #endif
 #endif // EMSCRIPTEN
@@ -110,8 +112,10 @@ private:
     std::cout << "(" << #__VA_ARGS__ << ") {"; logVars(__VA_ARGS__); std::cout << "}"; \
     std::cout << _DEBUG_PREFIXES << #__VA_ARGS__ << ": "; \
     std::cout << std::endl; \
-} while(0)
+} while(0) ;
+
 #define DEBUG_LOG(msg) std::cout << msg << _DEBUG_PREFIXES << std::endl;
+
 template<typename T>
 void logVars(const T& val) {
     std::cout << val;
@@ -137,10 +141,6 @@ DEBUG_LOG("~" << #expr);
             DEBUG_LOG(msg); \
         } \
     }
-
-//#define DEBUG_LOG_EVERY_SECOND(msg) DEBUG_LOG_EVERY_SECOND_IMPL(msg); static bool DEBUG_LOG_EVERY_SECOND_DUMMY_VAR = (DEBUG_LOG_EVERY_SECOND_IMPL(""), true);
-
-
 
 #endif // NDEBUG
 
