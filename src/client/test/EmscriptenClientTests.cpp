@@ -28,7 +28,7 @@
 // for proper operation we need a main loop which returns control to the main/js thread
 //  do this WITH_MAINLOOP, setting a main loop and exiting main into it
 
-//#define TEST_IN_MAIN
+#define TEST_IN_MAIN
 //#define TEST_WITH_MAINLOOP
 
 //#define TESTS_RUN_IN_THREADS
@@ -38,22 +38,23 @@
 #define PROXY_FETCH_TO_MAIN
 
 
-#define TEST_SIMPLE_REQUEST
+//#define TEST_SIMPLE_REQUEST
+#define TEST_THREADED_REQUEST
 //
 // ; fetch fails
 //#define TEST_SIMPLE_REQUEST_WAITABLE
 // there is thread proxying in emscripten, but this doesn't help, because fetches are worked upon in the runtime thread
 // works in mainloop;
-#define TEST_FETCH_PROXYING
+//#define TEST_FETCH_PROXYING
 // uses DnsRestClient but build command by hand
 // works in mainloop; fetch fails immediately in node and build down throws, fetch never fetched in chromium
 //#define TEST_REST_CLIENT_MANUAL
 //#define TEST_REST_CLIENT
 //#define TEST_REST_CLIENT_FUTURE
-#define TEST_CONTEXTCLIENT_FUTURE
+//#define TEST_CONTEXTCLIENT_FUTURE
 //#define TEST_REST_CLIENT_SYNC
 
-#if defined(TEST_FETCH_PROXYING)
+#if defined(TEST_FETCH_PROXYING) or defined(TEST_THREADED_REQUEST)
 #define NEED_SIMPLE_REQUEST
 #endif
 
@@ -166,14 +167,13 @@ void run_tests() {
 
 std::string still_running_tests() {
     std::string res = find_all_string(tests, [](TestCase* t) {
-        DEBUG_LOG(!t->ready())
         return !t->ready();
     });
     DEBUG_VARIABLES(res)
 #ifdef RUN_WITH_TIMEOUT
     static Timeout testsTimeout{RUN_WITH_TIMEOUT};
     if (res != "" && testsTimeout()) {
-        DEBUG_LOG("Timeout hit, the following Tests are still running and will be cancelled -" + res)
+        DEBUG_LOG("Timeout hit, the following Tests are still running and will be cancelled - " + res)
         return "";
     }
 #endif // RUN_WITH_TIMEOUT
@@ -226,6 +226,22 @@ struct TestEmscriptenRequest : TestCase {
 ADD_TESTCASE(TestEmscriptenRequest)
 #endif
 
+#ifdef TEST_THREADED_REQUEST
+struct TestThreadedRequest : TestEmscriptenRequest {
+     using TestEmscriptenRequest::TestEmscriptenRequest;
+    std::thread t;
+     void _run() override {
+        t = std::thread {
+            [this] () { TestEmscriptenRequest::_run(); }
+        };
+     }
+     ~TestThreadedRequest() {
+        t.join();
+     }
+};
+ADD_TESTCASE(TestThreadedRequest)
+#endif // TEST_THREADED_REQUEST
+
 #ifdef TEST_FETCH_PROXYING
 // https://emscripten.org/docs/api_reference/proxying.h.html
 //  from example https://github.com/emscripten-core/emscripten/blob/main/test/pthread/test_pthread_proxying_cpp.cpp#L37
@@ -244,19 +260,20 @@ struct TestFetchProxying : TestCase {
      std::atomic_bool returner_done{false};
      std::atomic_bool looper_quit{false};
      std::atomic_bool should_quit{false};
-     std::thread q{ [this]() {
+     /*std::thread q{ [this]() {
          // this code will never return
          t.run();
          t2.run();
          threaded_done = true;
-     } };
+     } };*/
      // the requests used by l_ooper r_eturner and the threaded variant
      TestEmscriptenRequest tl{"ProxyingLooper"}, tr{"ProxyingReturner"}, t{"ProxyingThreaded"}, tl2{"ProxyingLooper2"}, tr2{"ProxyingReturner2"}, t2{"ProxyingThreaded2"};
 
      void looper_run() {
-        DEBUG_LOG("looper_run")
-        while (!looper_quit && !tl.ready() && !tl2.ready()) {
+         DEBUG_LOG("looper_run")
+        while (!should_quit.load() && (!tl.ready() && !tl2.ready())) {
             DEBUG_LOG_EVERY_SECOND("LOOOOOOPING")
+            DEBUG_LOG_EVERY_SECOND(should_quit)
             queue.execute();
             sched_yield();
         }
@@ -297,7 +314,11 @@ struct TestFetchProxying : TestCase {
 
      ~TestFetchProxying() {
          should_quit = true;
-
+         DEBUG_LOG("~TestFetchProxying")
+         std::this_thread::yield();
+         //q.join();
+         returner.join();
+         looper.join();
      }
 };
 ADD_TESTCASE(TestFetchProxying)
